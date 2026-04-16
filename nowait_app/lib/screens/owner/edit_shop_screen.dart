@@ -1,0 +1,405 @@
+import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../../models/models.dart';
+import '../../services/shop_service.dart';
+import '../../services/api_client.dart';
+import '../../services/locale_service.dart';
+import '../../theme/app_theme.dart';
+import '../../widgets/gradient_button.dart';
+
+class EditShopScreen extends StatefulWidget {
+  final ShopModel shop;
+
+  const EditShopScreen({super.key, required this.shop});
+
+  @override
+  State<EditShopScreen> createState() => _EditShopScreenState();
+}
+
+class _EditShopScreenState extends State<EditShopScreen> {
+  late final TextEditingController _nameController;
+  late final TextEditingController _addressController;
+  late final TextEditingController _cityController;
+  late final TextEditingController _avgWaitController;
+  late String _selectedCategory;
+  bool _isLoading = false;
+  final _l = LocaleService.instance;
+
+  final _categories = [
+    'Salon',
+    'Beauty Parlour',
+    'Hospital/Clinic',
+    'Garage'
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _l.addListener(_onLocale);
+    _nameController =
+        TextEditingController(text: widget.shop.name);
+    _addressController =
+        TextEditingController(text: widget.shop.address);
+    _cityController =
+        TextEditingController(text: widget.shop.city);
+    _avgWaitController = TextEditingController(
+        text: widget.shop.avgWaitMinutes.toString());
+    _selectedCategory = _categories.contains(widget.shop.category)
+        ? widget.shop.category
+        : _categories.first;
+  }
+
+  void _onLocale() => setState(() {});
+
+  @override
+  void dispose() {
+    _l.removeListener(_onLocale);
+    _nameController.dispose();
+    _addressController.dispose();
+    _cityController.dispose();
+    _avgWaitController.dispose();
+    super.dispose();
+  }
+
+  bool get _isValid =>
+      _nameController.text.trim().isNotEmpty &&
+      _addressController.text.trim().isNotEmpty &&
+      _cityController.text.trim().isNotEmpty;
+
+  bool get _hasChanges =>
+      _nameController.text.trim() != widget.shop.name ||
+      _selectedCategory != widget.shop.category ||
+      _addressController.text.trim() != widget.shop.address ||
+      _cityController.text.trim() != widget.shop.city ||
+      (int.tryParse(_avgWaitController.text) ?? widget.shop.avgWaitMinutes) !=
+          widget.shop.avgWaitMinutes;
+
+  Future<void> _save() async {
+    if (!_isValid) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please fill all required fields')),
+      );
+      return;
+    }
+    if (!_hasChanges) {
+      Navigator.pop(context);
+      return;
+    }
+    setState(() => _isLoading = true);
+    try {
+      final updated = await ShopService.instance.updateShop(
+        widget.shop.id,
+        name: _nameController.text.trim(),
+        category: _selectedCategory,
+        address: _addressController.text.trim(),
+        city: _cityController.text.trim(),
+        avgWaitMinutes:
+            int.tryParse(_avgWaitController.text) ??
+                widget.shop.avgWaitMinutes,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('✓  Shop details updated'),
+          backgroundColor: AppColors.tertiary,
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+      Navigator.pop(context, updated);
+    } on ApiException catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: Text(e.message),
+              backgroundColor: AppColors.error),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text('Failed to update shop. Try again.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.surface,
+      body: Stack(
+        children: [
+          SafeArea(
+            child: Column(
+              children: [
+                // Header
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 10),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        onPressed: () => Navigator.pop(context),
+                        icon: const Icon(
+                            Icons.arrow_back_ios_new_rounded,
+                            size: 20),
+                        style: IconButton.styleFrom(
+                          backgroundColor: AppColors.surfaceContainerLow,
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Edit Shop Details',
+                              style: GoogleFonts.plusJakartaSans(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.onSurface),
+                            ),
+                            Text(
+                              widget.shop.name,
+                              style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  color: AppColors.onSurfaceVariant),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 120),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _sectionTitle('General Details'),
+                        const SizedBox(height: 14),
+                        _buildSection([
+                          _field(_nameController, 'SHOP NAME',
+                              'e.g. Luxe Cuts Studio'),
+                          const SizedBox(height: 16),
+                          _categoryDropdown(),
+                          const SizedBox(height: 16),
+                          _field(_addressController, 'ADDRESS',
+                              'Street, locality'),
+                          const SizedBox(height: 16),
+                          _field(_cityController, 'CITY', 'Your city',
+                              cap: TextCapitalization.words),
+                        ]),
+                        const SizedBox(height: 24),
+                        _sectionTitle('Queue Settings'),
+                        const SizedBox(height: 14),
+                        _buildSection([
+                          _field(
+                            _avgWaitController,
+                            'AVG. WAIT TIME (MINUTES)',
+                            '10',
+                            keyboard: TextInputType.number,
+                            cap: TextCapitalization.none,
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Estimated wait time shown to customers when they view your shop.',
+                            style: GoogleFonts.inter(
+                                fontSize: 11,
+                                color: AppColors.onSurfaceVariant),
+                          ),
+                        ]),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Sticky save button
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    AppColors.surface.withValues(alpha: 0),
+                    AppColors.surface,
+                    AppColors.surface,
+                  ],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                ),
+              ),
+              child: _isLoading
+                  ? Container(
+                      height: 52,
+                      decoration: BoxDecoration(
+                        gradient: AppColors.primaryGradient135,
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: const Center(
+                        child: SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2.5),
+                        ),
+                      ),
+                    )
+                  : GradientButton(
+                      label: 'Save Changes',
+                      onPressed: _save,
+                      icon: Icons.check_circle_outline_rounded,
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionTitle(String title) {
+    return Row(
+      children: [
+        Container(
+          width: 3,
+          height: 18,
+          decoration: BoxDecoration(
+            gradient: AppColors.primaryGradient135,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: GoogleFonts.plusJakartaSans(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: AppColors.onSurface),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSection(List<Widget> children) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLowest,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+              color: AppColors.shadowPrimary,
+              blurRadius: 12,
+              offset: const Offset(0, 3)),
+        ],
+      ),
+      child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: children),
+    );
+  }
+
+  Widget _field(
+    TextEditingController controller,
+    String label,
+    String hint, {
+    TextCapitalization cap = TextCapitalization.sentences,
+    TextInputType keyboard = TextInputType.text,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.inter(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.0,
+              color: AppColors.onSurfaceVariant),
+        ),
+        const SizedBox(height: 6),
+        TextField(
+          controller: controller,
+          textCapitalization: cap,
+          keyboardType: keyboard,
+          onChanged: (_) => setState(() {}),
+          decoration: InputDecoration(
+            hintText: hint,
+            hintStyle: GoogleFonts.inter(
+                fontSize: 14,
+                color: AppColors.onSurfaceVariant.withValues(alpha: 0.5)),
+            filled: false,
+            border: const UnderlineInputBorder(
+                borderSide:
+                    BorderSide(color: AppColors.outline, width: 0.5)),
+            enabledBorder: UnderlineInputBorder(
+                borderSide: BorderSide(
+                    color: AppColors.outline.withValues(alpha: 0.4),
+                    width: 0.8)),
+            focusedBorder: const UnderlineInputBorder(
+                borderSide:
+                    BorderSide(color: AppColors.primary, width: 1.5)),
+            contentPadding: const EdgeInsets.only(bottom: 6),
+          ),
+          style: GoogleFonts.inter(fontSize: 15, color: AppColors.onSurface),
+        ),
+      ],
+    );
+  }
+
+  Widget _categoryDropdown() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'CATEGORY',
+          style: GoogleFonts.inter(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.0,
+              color: AppColors.onSurfaceVariant),
+        ),
+        const SizedBox(height: 6),
+        DropdownButtonFormField<String>(
+          initialValue: _selectedCategory,
+          onChanged: (v) => setState(() => _selectedCategory = v!),
+          decoration: InputDecoration(
+            filled: false,
+            border: UnderlineInputBorder(
+                borderSide: BorderSide(
+                    color: AppColors.outline.withValues(alpha: 0.4),
+                    width: 0.8)),
+            enabledBorder: UnderlineInputBorder(
+                borderSide: BorderSide(
+                    color: AppColors.outline.withValues(alpha: 0.4),
+                    width: 0.8)),
+            focusedBorder: const UnderlineInputBorder(
+                borderSide:
+                    BorderSide(color: AppColors.primary, width: 1.5)),
+            contentPadding: const EdgeInsets.only(bottom: 6),
+          ),
+          style:
+              GoogleFonts.inter(fontSize: 15, color: AppColors.onSurface),
+          items: _categories
+              .map((c) => DropdownMenuItem(value: c, child: Text(c)))
+              .toList(),
+        ),
+      ],
+    );
+  }
+}
