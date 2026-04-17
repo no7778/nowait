@@ -71,16 +71,8 @@ def _demo_sign_in(phone: str) -> dict:
     except Exception as e:
         print(f"[DEMO] Sign-in attempt 1 failed: {e}")
 
-    # ── Step 2a: Try Admin REST API to create user ────────────────────────────
-    admin_ok = _try_admin_create(email, password)
-
-    # ── Step 2b: Fallback — try sign_up (works if email confirm is off) ───────
-    if not admin_ok:
-        try:
-            supabase_auth.auth.sign_up({"email": email, "password": password})
-            print(f"[DEMO] sign_up succeeded for {email}")
-        except Exception as e:
-            print(f"[DEMO] sign_up also failed: {e}")
+    # ── Step 2: Create user via Admin API (sets email_confirm=true, bypasses email confirmation) ──
+    user_id = _try_admin_create(email, password)
 
     # ── Step 3: Sign-in after creation ───────────────────────────────────────
     try:
@@ -90,20 +82,22 @@ def _demo_sign_in(phone: str) -> dict:
             return _build_response(result.session, result.user)
     except Exception as e:
         print(f"[DEMO] Sign-in attempt 2 failed: {e}")
-        raise HTTPException(
-            status_code=500,
-            detail=(
-                f"Demo login failed for {email}. "
-                "In Supabase dashboard → Authentication → Providers → Email, "
-                "disable 'Confirm email'. Error: " + str(e)
-            ),
-        )
+        # Last resort: confirm user via admin API then retry
+        if user_id:
+            _admin_confirm_user(user_id)
+        try:
+            result = supabase_auth.auth.sign_in_with_password({"email": email, "password": password})
+            if result.session and result.user:
+                print(f"[DEMO] Signed in after force-confirm: {email}")
+                return _build_response(result.session, result.user)
+        except Exception as e2:
+            raise HTTPException(status_code=500, detail=f"Demo login failed for {email}. Error: {str(e2)}")
 
     raise HTTPException(status_code=500, detail="Demo sign-in returned no session.")
 
 
-def _try_admin_create(email: str, password: str) -> bool:
-    """Call Supabase Admin REST API. Returns True if user is ready."""
+def _try_admin_create(email: str, password: str) -> str | None:
+    """Create user via Admin API with email pre-confirmed. Returns user ID or None."""
     url = f"{settings.SUPABASE_URL}/auth/v1/admin/users"
     headers = {
         "apikey": settings.SUPABASE_SERVICE_KEY,
@@ -116,12 +110,51 @@ def _try_admin_create(email: str, password: str) -> bool:
             "password": password,
             "email_confirm": True,
         }, headers=headers, timeout=10.0)
-        print(f"[DEMO] Admin API → HTTP {resp.status_code}: {resp.text[:300]}")
-        # 200/201 = created, 422 = already exists
-        return resp.status_code in (200, 201, 422)
+        print(f"[DEMO] Admin create → HTTP {resp.status_code}: {resp.text[:300]}")
+        data = resp.json()
+        if resp.status_code in (200, 201):
+            return data.get("id")
+        if resp.status_code == 422:
+            # User already exists — get their ID
+            return _get_user_id_by_email(email)
+        return None
     except Exception as e:
-        print(f"[DEMO] Admin API exception: {e}")
-        return False
+        print(f"[DEMO] Admin create exception: {e}")
+        return None
+
+
+def _get_user_id_by_email(email: str) -> str | None:
+    """Look up existing user ID by email via Admin API."""
+    url = f"{settings.SUPABASE_URL}/auth/v1/admin/users"
+    headers = {
+        "apikey": settings.SUPABASE_SERVICE_KEY,
+        "Authorization": f"Bearer {settings.SUPABASE_SERVICE_KEY}",
+    }
+    try:
+        resp = httpx.get(url, params={"email": email}, headers=headers, timeout=10.0)
+        data = resp.json()
+        users = data.get("users", [])
+        for u in users:
+            if u.get("email") == email:
+                return u.get("id")
+    except Exception as e:
+        print(f"[DEMO] Get user ID exception: {e}")
+    return None
+
+
+def _admin_confirm_user(user_id: str) -> None:
+    """Force-confirm a user's email via Admin API."""
+    url = f"{settings.SUPABASE_URL}/auth/v1/admin/users/{user_id}"
+    headers = {
+        "apikey": settings.SUPABASE_SERVICE_KEY,
+        "Authorization": f"Bearer {settings.SUPABASE_SERVICE_KEY}",
+        "Content-Type": "application/json",
+    }
+    try:
+        resp = httpx.put(url, json={"email_confirm": True}, headers=headers, timeout=10.0)
+        print(f"[DEMO] Force-confirm → HTTP {resp.status_code}")
+    except Exception as e:
+        print(f"[DEMO] Force-confirm exception: {e}")
 
 
 def _build_response(session, user) -> dict:
