@@ -1,6 +1,6 @@
 import httpx
 from fastapi import HTTPException
-
+#
 from app.config import settings
 from app.database import execute_one, supabase, supabase_auth
 from app.schemas.auth import CompleteProfileRequest
