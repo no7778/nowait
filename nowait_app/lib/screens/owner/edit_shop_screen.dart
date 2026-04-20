@@ -21,6 +21,7 @@ class _EditShopScreenState extends State<EditShopScreen> {
   late final TextEditingController _addressController;
   late final TextEditingController _cityController;
   late final TextEditingController _avgWaitController;
+  late final TextEditingController _openingHoursController;
   late String _selectedCategory;
   bool _isLoading = false;
   final _l = LocaleService.instance;
@@ -44,6 +45,8 @@ class _EditShopScreenState extends State<EditShopScreen> {
         TextEditingController(text: widget.shop.city);
     _avgWaitController = TextEditingController(
         text: widget.shop.avgWaitMinutes.toString());
+    _openingHoursController = TextEditingController(
+        text: widget.shop.openingHours ?? '9:00 AM - 8:00 PM');
     _selectedCategory = _categories.contains(widget.shop.category)
         ? widget.shop.category
         : _categories.first;
@@ -58,6 +61,7 @@ class _EditShopScreenState extends State<EditShopScreen> {
     _addressController.dispose();
     _cityController.dispose();
     _avgWaitController.dispose();
+    _openingHoursController.dispose();
     super.dispose();
   }
 
@@ -72,7 +76,9 @@ class _EditShopScreenState extends State<EditShopScreen> {
       _addressController.text.trim() != widget.shop.address ||
       _cityController.text.trim() != widget.shop.city ||
       (int.tryParse(_avgWaitController.text) ?? widget.shop.avgWaitMinutes) !=
-          widget.shop.avgWaitMinutes;
+          widget.shop.avgWaitMinutes ||
+      _openingHoursController.text.trim() !=
+          (widget.shop.openingHours ?? '9:00 AM - 8:00 PM');
 
   Future<void> _save() async {
     if (!_isValid) {
@@ -96,6 +102,9 @@ class _EditShopScreenState extends State<EditShopScreen> {
         avgWaitMinutes:
             int.tryParse(_avgWaitController.text) ??
                 widget.shop.avgWaitMinutes,
+        openingHours: _openingHoursController.text.trim().isNotEmpty
+            ? _openingHoursController.text.trim()
+            : null,
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -200,9 +209,15 @@ class _EditShopScreenState extends State<EditShopScreen> {
                               cap: TextCapitalization.words),
                         ]),
                         const SizedBox(height: 24),
-                        _sectionTitle('Queue Settings'),
+                        _sectionTitle('Hours & Queue Settings'),
                         const SizedBox(height: 14),
                         _buildSection([
+                          _field(
+                            _openingHoursController,
+                            'OPENING HOURS',
+                            '9:00 AM - 8:00 PM',
+                          ),
+                          const SizedBox(height: 16),
                           _field(
                             _avgWaitController,
                             'AVG. WAIT TIME (MINUTES)',

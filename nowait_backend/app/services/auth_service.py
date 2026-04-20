@@ -1,6 +1,6 @@
 import httpx
 from fastapi import HTTPException
-#
+
 from app.config import settings
 from app.database import execute_one, supabase, supabase_auth
 from app.schemas.auth import CompleteProfileRequest
@@ -62,38 +62,42 @@ def _demo_sign_in(phone: str) -> dict:
     email = _demo_email(phone)
     password = settings.DEMO_PASSWORD
 
-    # ── Step 1: Try sign-in (fast path if user already created) ──────────────
-    try:
-        result = supabase_auth.auth.sign_in_with_password({"email": email, "password": password})
-        if result.session and result.user:
-            print(f"[DEMO] Signed in existing user: {email}")
-            return _build_response(result.session, result.user)
-    except Exception as e:
-        print(f"[DEMO] Sign-in attempt 1 failed: {e}")
+    # ── Step 1: Try direct REST sign-in (bypasses supabase-py client quirks) ──
+    data = _direct_sign_in(email, password)
+    if data:
+        print(f"[DEMO] Signed in existing user: {email}")
+        return _build_response_from_dict(data)
 
-    # ── Step 2: Create user via Admin API (sets email_confirm=true, bypasses email confirmation) ──
+    # ── Step 2: Create user via Admin API with email pre-confirmed ────────────
     user_id = _try_admin_create(email, password)
+    if user_id:
+        _admin_confirm_user(user_id)
 
     # ── Step 3: Sign-in after creation ───────────────────────────────────────
-    try:
-        result = supabase_auth.auth.sign_in_with_password({"email": email, "password": password})
-        if result.session and result.user:
-            print(f"[DEMO] Signed in after creation: {email}")
-            return _build_response(result.session, result.user)
-    except Exception as e:
-        print(f"[DEMO] Sign-in attempt 2 failed: {e}")
-        # Last resort: confirm user via admin API then retry
-        if user_id:
-            _admin_confirm_user(user_id)
-        try:
-            result = supabase_auth.auth.sign_in_with_password({"email": email, "password": password})
-            if result.session and result.user:
-                print(f"[DEMO] Signed in after force-confirm: {email}")
-                return _build_response(result.session, result.user)
-        except Exception as e2:
-            raise HTTPException(status_code=500, detail=f"Demo login failed for {email}. Error: {str(e2)}")
+    data = _direct_sign_in(email, password)
+    if data:
+        print(f"[DEMO] Signed in after creation: {email}")
+        return _build_response_from_dict(data)
 
-    raise HTTPException(status_code=500, detail="Demo sign-in returned no session.")
+    raise HTTPException(status_code=500, detail=f"Demo login failed for {email}. Check Supabase Email provider is enabled.")
+
+
+def _direct_sign_in(email: str, password: str) -> dict | None:
+    """Sign in via direct REST call — more reliable than supabase-py client."""
+    url = f"{settings.SUPABASE_URL}/auth/v1/token?grant_type=password"
+    headers = {
+        "apikey": settings.SUPABASE_ANON_KEY,
+        "Content-Type": "application/json",
+    }
+    try:
+        resp = httpx.post(url, json={"email": email, "password": password}, headers=headers, timeout=10.0)
+        print(f"[DEMO] Direct sign-in -> HTTP {resp.status_code}")
+        if resp.status_code == 200:
+            return resp.json()
+        return None
+    except Exception as e:
+        print(f"[DEMO] Direct sign-in exception: {e}")
+        return None
 
 
 def _try_admin_create(email: str, password: str) -> str | None:
@@ -110,7 +114,7 @@ def _try_admin_create(email: str, password: str) -> str | None:
             "password": password,
             "email_confirm": True,
         }, headers=headers, timeout=10.0)
-        print(f"[DEMO] Admin create → HTTP {resp.status_code}: {resp.text[:300]}")
+        print(f"[DEMO] Admin create -> HTTP {resp.status_code}: {resp.text[:300]}")
         data = resp.json()
         if resp.status_code in (200, 201):
             return data.get("id")
@@ -143,7 +147,7 @@ def _get_user_id_by_email(email: str) -> str | None:
 
 
 def _admin_confirm_user(user_id: str) -> None:
-    """Force-confirm a user's email via Admin API."""
+    """Force-confirm email and reset password via Admin API."""
     url = f"{settings.SUPABASE_URL}/auth/v1/admin/users/{user_id}"
     headers = {
         "apikey": settings.SUPABASE_SERVICE_KEY,
@@ -151,8 +155,8 @@ def _admin_confirm_user(user_id: str) -> None:
         "Content-Type": "application/json",
     }
     try:
-        resp = httpx.put(url, json={"email_confirm": True}, headers=headers, timeout=10.0)
-        print(f"[DEMO] Force-confirm → HTTP {resp.status_code}")
+        resp = httpx.put(url, json={"email_confirm": True, "password": settings.DEMO_PASSWORD}, headers=headers, timeout=10.0)
+        print(f"[DEMO] Force-confirm+reset -> HTTP {resp.status_code}")
     except Exception as e:
         print(f"[DEMO] Force-confirm exception: {e}")
 
@@ -165,6 +169,20 @@ def _build_response(session, user) -> dict:
         "token_type": "bearer",
         "expires_in": session.expires_in,
         "refresh_token": session.refresh_token,
+        "profile": profile,
+        "profile_required": profile is None,
+    }
+
+
+def _build_response_from_dict(data: dict) -> dict:
+    user_id = data.get("user", {}).get("id") or data.get("sub")
+    profile_result = execute_one(supabase.table("profiles").select("*").eq("id", user_id))
+    profile = profile_result.data
+    return {
+        "access_token": data["access_token"],
+        "token_type": "bearer",
+        "expires_in": data.get("expires_in", 3600),
+        "refresh_token": data.get("refresh_token", ""),
         "profile": profile,
         "profile_required": profile is None,
     }

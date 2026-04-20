@@ -15,6 +15,8 @@ class ApiClient {
   static final ApiClient instance = ApiClient._();
   ApiClient._();
 
+  bool _isRefreshing = false;
+
   Map<String, String> get _headers {
     final token = AuthService.instance.accessToken;
     return {
@@ -34,41 +36,78 @@ class ApiClient {
 
   static const _timeout = Duration(seconds: 30);
 
-  Future<dynamic> get(String path, {Map<String, dynamic>? query}) async {
-    final res = await http.get(_uri(path, query), headers: _headers).timeout(_timeout);
+  /// Attempts a token refresh via direct HTTP (no ApiClient recursion).
+  /// Returns true if tokens were updated, false if refresh failed (clears session).
+  Future<bool> _tryRefresh() async {
+    if (_isRefreshing) return false;
+    final refreshTok = AuthService.instance.refreshToken;
+    if (refreshTok == null) {
+      await AuthService.instance.logout();
+      return false;
+    }
+    _isRefreshing = true;
+    try {
+      final res = await http.post(
+        _uri('/auth/refresh'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'refresh_token': refreshTok}),
+      ).timeout(_timeout);
+      if (res.statusCode == 200) {
+        final data = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+        AuthService.instance.accessToken = data['access_token'] as String?;
+        if (data['refresh_token'] != null) {
+          AuthService.instance.refreshToken = data['refresh_token'] as String?;
+        }
+        return true;
+      }
+    } catch (_) {}
+    await AuthService.instance.logout();
+    return false;
+  }
+
+  /// Executes [makeRequest], retries once after token refresh on 401.
+  Future<dynamic> _executeWithRetry(Future<http.Response> Function() makeRequest) async {
+    var res = await makeRequest().timeout(_timeout);
+    if (res.statusCode == 401) {
+      final refreshed = await _tryRefresh();
+      _isRefreshing = false;
+      if (refreshed) {
+        res = await makeRequest().timeout(_timeout);
+      }
+    }
     return _handle(res);
+  }
+
+  Future<dynamic> get(String path, {Map<String, dynamic>? query}) async {
+    return _executeWithRetry(() => http.get(_uri(path, query), headers: _headers));
   }
 
   Future<dynamic> post(String path, {Map<String, dynamic>? body, Map<String, dynamic>? query}) async {
-    final res = await http.post(
+    return _executeWithRetry(() => http.post(
       _uri(path, query),
       headers: _headers,
       body: jsonEncode(body ?? {}),
-    ).timeout(_timeout);
-    return _handle(res);
+    ));
   }
 
   Future<dynamic> put(String path, {Map<String, dynamic>? body}) async {
-    final res = await http.put(
+    return _executeWithRetry(() => http.put(
       _uri(path),
       headers: _headers,
       body: jsonEncode(body ?? {}),
-    ).timeout(_timeout);
-    return _handle(res);
+    ));
   }
 
   Future<dynamic> patch(String path, {Map<String, dynamic>? body}) async {
-    final res = await http.patch(
+    return _executeWithRetry(() => http.patch(
       _uri(path),
       headers: _headers,
       body: jsonEncode(body ?? {}),
-    ).timeout(_timeout);
-    return _handle(res);
+    ));
   }
 
   Future<dynamic> delete(String path) async {
-    final res = await http.delete(_uri(path), headers: _headers).timeout(_timeout);
-    return _handle(res);
+    return _executeWithRetry(() => http.delete(_uri(path), headers: _headers));
   }
 
   dynamic _handle(http.Response res) {

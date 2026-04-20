@@ -45,6 +45,7 @@ class ShopService {
     required String city,
     int avgWaitMinutes = 10,
     List<Map<String, dynamic>> services = const [],
+    String? openingHours,
   }) async {
     final res = await ApiClient.instance.post('/shops', body: {
       'name': name,
@@ -53,6 +54,7 @@ class ShopService {
       'city': city,
       'avg_wait_minutes': avgWaitMinutes,
       'services': services,
+      if (openingHours != null) 'opening_hours': openingHours,
     });
     return ShopModel.fromJson(res);
   }
@@ -64,6 +66,7 @@ class ShopService {
     String? address,
     String? city,
     int? avgWaitMinutes,
+    String? openingHours,
   }) async {
     final body = <String, dynamic>{
       if (name != null) 'name': name,
@@ -71,6 +74,7 @@ class ShopService {
       if (address != null) 'address': address,
       if (city != null) 'city': city,
       if (avgWaitMinutes != null) 'avg_wait_minutes': avgWaitMinutes,
+      if (openingHours != null) 'opening_hours': openingHours,
     };
     final res = await ApiClient.instance.put('/shops/$shopId', body: body);
     return ShopModel.fromJson(res);
