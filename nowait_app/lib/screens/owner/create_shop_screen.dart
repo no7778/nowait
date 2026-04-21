@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
@@ -107,8 +108,7 @@ class _CreateShopScreenState extends State<CreateShopScreen> {
     final images = await picker.pickMultiImage(imageQuality: 80);
     if (images.isNotEmpty) {
       setState(() {
-        // Limit to 8 total
-        final remaining = 8 - _selectedImages.length;
+        final remaining = 10 - _selectedImages.length;
         _selectedImages.addAll(images.take(remaining));
       });
     }
@@ -171,6 +171,13 @@ class _CreateShopScreenState extends State<CreateShopScreen> {
         services: servicesList,
         openingHours: _openingHoursString,
       );
+
+      // Upload selected images to Supabase Storage
+      for (final img in _selectedImages) {
+        try {
+          await ShopService.instance.uploadImage(shop.id, img);
+        } catch (_) {}
+      }
 
       // Item 11: Track failed staff additions
       final List<String> failedStaff = [];
@@ -344,7 +351,7 @@ class _CreateShopScreenState extends State<CreateShopScreen> {
                               mainAxisSpacing: 8,
                               childAspectRatio: 1,
                             ),
-                            itemCount: _selectedImages.length + (_selectedImages.length < 8 ? 1 : 0),
+                            itemCount: _selectedImages.length + (_selectedImages.length < 10 ? 1 : 0),
                             itemBuilder: (_, i) {
                               if (i == _selectedImages.length) {
                                 return GestureDetector(
@@ -372,12 +379,19 @@ class _CreateShopScreenState extends State<CreateShopScreen> {
                                 children: [
                                   ClipRRect(
                                     borderRadius: BorderRadius.circular(12),
-                                    child: Image.file(
-                                      File(_selectedImages[i].path),
-                                      fit: BoxFit.cover,
-                                      width: double.infinity,
-                                      height: double.infinity,
-                                    ),
+                                    child: kIsWeb
+                                        ? Image.network(
+                                            _selectedImages[i].path,
+                                            fit: BoxFit.cover,
+                                            width: double.infinity,
+                                            height: double.infinity,
+                                          )
+                                        : Image.file(
+                                            File(_selectedImages[i].path),
+                                            fit: BoxFit.cover,
+                                            width: double.infinity,
+                                            height: double.infinity,
+                                          ),
                                   ),
                                   Positioned(
                                     top: 4,
@@ -399,7 +413,7 @@ class _CreateShopScreenState extends State<CreateShopScreen> {
                             Padding(
                               padding: const EdgeInsets.only(top: 8),
                               child: Text(
-                                'Tap + to add up to 8 photos',
+                                'Tap + to add up to 10 photos',
                                 style: GoogleFonts.inter(fontSize: 11, color: AppColors.onSurfaceVariant),
                               ),
                             ),

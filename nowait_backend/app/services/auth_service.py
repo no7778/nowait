@@ -1,5 +1,9 @@
+import logging
+
 import httpx
 from fastapi import HTTPException
+
+logger = logging.getLogger(__name__)
 
 from app.config import settings
 from app.database import execute_one, supabase, supabase_auth
@@ -19,10 +23,11 @@ def send_otp(phone: str) -> dict:
         supabase_auth.auth.sign_in_with_otp({"phone": phone})
         return {"message": f"OTP sent to {phone}"}
     except Exception as e:
-        error_msg = str(e)
-        if "rate" in error_msg.lower():
-            raise HTTPException(status_code=429, detail="Too many requests.")
-        raise HTTPException(status_code=400, detail=f"Failed to send OTP: {error_msg}")
+        error_msg = str(e).lower()
+        logger.error("OTP send error: %s", e)
+        if "rate" in error_msg:
+            raise HTTPException(status_code=429, detail="Too many requests. Please wait before trying again.")
+        raise HTTPException(status_code=400, detail="Failed to send OTP. Please check the phone number and try again.")
 
 
 def verify_otp(phone: str, token: str) -> dict:
@@ -55,7 +60,8 @@ def verify_otp(phone: str, token: str) -> dict:
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=400, detail=f"OTP verification failed: {str(e)}")
+        logger.error("OTP verification error: %s", e)
+        raise HTTPException(status_code=400, detail="OTP verification failed. Please try again.")
 
 
 def _demo_sign_in(phone: str) -> dict:
@@ -220,4 +226,5 @@ def refresh_session(refresh_token: str) -> dict:
             "refresh_token": session.refresh_token,
         }
     except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Failed to refresh session: {str(e)}")
+        logger.error("Session refresh error: %s", e)
+        raise HTTPException(status_code=401, detail="Session expired. Please log in again.")

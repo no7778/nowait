@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import '../config/app_config.dart';
 import 'auth_service.dart';
 
@@ -106,8 +107,39 @@ class ApiClient {
     ));
   }
 
-  Future<dynamic> delete(String path) async {
+  Future<dynamic> delete(String path, {Map<String, dynamic>? body}) async {
+    if (body != null) {
+      return _executeWithRetry(() => http.delete(
+        _uri(path),
+        headers: _headers,
+        body: jsonEncode(body),
+      ));
+    }
     return _executeWithRetry(() => http.delete(_uri(path), headers: _headers));
+  }
+
+  Future<dynamic> multipartPost(
+    String path, {
+    required List<int> fileBytes,
+    required String filename,
+    required String mimeType,
+    String fieldName = 'file',
+  }) async {
+    final token = AuthService.instance.accessToken;
+    final request = http.MultipartRequest('POST', _uri(path));
+    if (token != null) request.headers['Authorization'] = 'Bearer $token';
+
+    final parts = mimeType.split('/');
+    request.files.add(http.MultipartFile.fromBytes(
+      fieldName,
+      fileBytes,
+      filename: filename,
+      contentType: MediaType(parts[0], parts.length > 1 ? parts[1] : 'octet-stream'),
+    ));
+
+    final streamed = await request.send().timeout(_timeout);
+    final res = await http.Response.fromStream(streamed);
+    return _handle(res);
   }
 
   dynamic _handle(http.Response res) {

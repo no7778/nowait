@@ -1,3 +1,4 @@
+import 'package:image_picker/image_picker.dart';
 import '../models/models.dart';
 import 'api_client.dart';
 
@@ -83,5 +84,42 @@ class ShopService {
   Future<ShopModel> toggleOpen(String shopId) async {
     await ApiClient.instance.post('/shops/$shopId/toggle-open');
     return getShop(shopId);
+  }
+
+  /// Uploads a single image to the shop. Returns the new public URL.
+  Future<String> uploadImage(String shopId, XFile file) async {
+    final bytes = await file.readAsBytes();
+    final filename = file.name.isNotEmpty ? file.name : 'image.jpg';
+    final mimeType = _mimeFromFilename(filename);
+    final res = await ApiClient.instance.multipartPost(
+      '/shops/$shopId/images',
+      fileBytes: bytes,
+      filename: filename,
+      mimeType: mimeType,
+    );
+    return res['url'] as String;
+  }
+
+  /// Deletes an image URL from the shop.
+  Future<List<String>> deleteImage(String shopId, String imageUrl) async {
+    final res = await ApiClient.instance.delete(
+      '/shops/$shopId/images',
+      body: {'image_url': imageUrl},
+    );
+    return List<String>.from(res['images'] as List);
+  }
+
+  String _mimeFromFilename(String filename) {
+    final ext = filename.split('.').last.toLowerCase();
+    switch (ext) {
+      case 'png':
+        return 'image/png';
+      case 'webp':
+        return 'image/webp';
+      case 'gif':
+        return 'image/gif';
+      default:
+        return 'image/jpeg';
+    }
   }
 }

@@ -1030,18 +1030,17 @@ class _CompactShopCard extends StatelessWidget {
             // Icon + promoted badge row
             Row(
               children: [
-                Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceContainerLow,
-                    borderRadius: BorderRadius.circular(13),
-                  ),
-                  child: Icon(
-                    _categoryIcon(shop.category),
-                    color: _categoryColor(shop.category),
-                    size: 22,
-                  ),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(13),
+                  child: shop.images.isNotEmpty
+                      ? Image.network(
+                          shop.images.first,
+                          width: 44,
+                          height: 44,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => _iconBox(),
+                        )
+                      : _iconBox(),
                 ),
                 const Spacer(),
                 if (shop.isPromoted)
@@ -1103,6 +1102,18 @@ class _CompactShopCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _iconBox() {
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        color: AppColors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(13),
+      ),
+      child: Icon(_categoryIcon(shop.category), color: _categoryColor(shop.category), size: 22),
     );
   }
 
