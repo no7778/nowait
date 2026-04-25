@@ -174,6 +174,7 @@ class _HomeTabState extends State<_HomeTab> {
       subtitle: 'OPD · Dentist · Lab Tests',
       color: Color(0xFF059669),
       icon: Icons.local_hospital,
+      categoryKey: 'Hospital/Clinic',
     ),
     _CategoryInfo(
       name: 'Garage',
@@ -767,13 +768,17 @@ class _CategoryInfo {
   final String subtitle;
   final Color color;
   final IconData icon;
+  final String? categoryKey;
 
   const _CategoryInfo({
     required this.name,
     required this.subtitle,
     required this.color,
     required this.icon,
+    this.categoryKey,
   });
+
+  String get filterKey => categoryKey ?? name;
 }
 
 // ─── Category grid card (square, white, single-colour icon) ──────────────────
@@ -825,10 +830,10 @@ class _CategoryGridCardState extends State<_CategoryGridCard>
     final c = widget.info.color;
     final s = widget.cardSize;
     final shopCount =
-        widget.allShops.where((e) => e.category == widget.info.name).length;
+        widget.allShops.where((e) => e.category == widget.info.filterKey).length;
     final openCount = widget.allShops
         .where((e) =>
-            e.category == widget.info.name &&
+            e.category == widget.info.filterKey &&
             e.isOpen &&
             e.hasActiveSubscription)
         .length;
@@ -851,7 +856,7 @@ class _CategoryGridCardState extends State<_CategoryGridCard>
           context,
           MaterialPageRoute(
               builder: (_) => CategoryScreen(
-                    category: widget.info.name,
+                    category: widget.info.filterKey,
                     initialCity: widget.selectedCity,
                   )),
         );
